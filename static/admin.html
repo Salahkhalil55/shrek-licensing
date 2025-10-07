@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>License Admin — ShrekAimAssist</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body{background:#0b1320;color:#e7f0ff;font-family:system-ui,Segoe UI,Arial;margin:0}
+  .wrap{max-width:1000px;margin:30px auto;padding:20px}
+  .card{background:#0f1a2b;border:1px solid #1f2b44;border-radius:14px;padding:16px;margin-bottom:18px}
+  input,button{padding:10px;border-radius:10px;border:1px solid #284262;background:#0b1730;color:#e7f0ff}
+  button{background:#1f5cff;border-color:#1f5cff;cursor:pointer}
+  h1{font-weight:700}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{border-bottom:1px solid #1e2c49;padding:8px;text-align:left;font-size:14px}
+  .pill{padding:2px 8px;border-radius:999px;font-size:12px}
+  .ok{background:#153b1f;color:#79ff9f}
+  .bad{background:#3b1515;color:#ff7d7d}
+  .muted{color:#97a7c3}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>License Admin — ShrekAimAssist</h1>
+
+  <div class="card">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <input id="token" placeholder="Admin token" value="" style="min-width:220px">
+      <input id="product" placeholder="Product" value="ShrekAimAssist">
+      <input id="version" placeholder="Version" value="1.1">
+      <input id="days" placeholder="Days" value="30" type="number" min="1" style="width:100px">
+      <button onclick="generate()">Create new key</button>
+      <button onclick="refreshList()">Refresh list</button>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <input id="key" placeholder="Key (for activate/validate/revoke/extend)" style="min-width:340px">
+      <input id="hwid" placeholder="HWID (for activate)">
+      <input id="extend" placeholder="Extend days" value="3" type="number" min="1" style="width:120px">
+      <button onclick="activate()">Activate</button>
+      <button onclick="validate()">Validate</button>
+      <button onclick="revoke()">Revoke</button>
+      <button onclick="extend()">Extend</button>
+    </div>
+
+    <pre id="out" style="margin-top:12px;background:#081022;border-radius:10px;padding:12px;overflow:auto;max-height:280px"></pre>
+  </div>
+
+  <div class="card">
+    <h3>Keys list</h3>
+    <table id="tbl"><thead>
+      <tr>
+        <th>Key</th><th>Product / Ver</th><th>Issued</th><th>Activated</th>
+        <th>Expires</th><th>HWID</th><th>Status</th><th>Actions</th>
+      </tr>
+    </thead><tbody></tbody></table>
+  </div>
+</div>
+
+<script>
+const API = location.origin + "/api";
+function val(id){return document.getElementById(id).value.trim()}
+function out(o){document.getElementById('out').textContent = JSON.stringify(o, null, 2)}
+async function post(action, body, withToken=true){
+  const headers = {'Content-Type':'application/json'};
+  if(withToken){headers['X-Admin-Token']=val('token')}
+  const r = await fetch(API+'?action='+action, {method:'POST', headers, body: JSON.stringify(body||{})});
+  try { return await r.json() } catch { return {ok:false, error:'bad_json', raw: await r.text()} }
+}
+async function generate(){
+  const res = await post('generate', {product: val('product'), version: val('version'), days: Number(val('days'))});
+  out(res); if(res.ok){document.getElementById('key').value = res.key; refreshList();}
+}
+async function refreshList(){
+  const res = await post('list', {}, true);
+  out(res);
+  const tb = document.querySelector('#tbl tbody'); tb.innerHTML='';
+  if(!res.ok) return;
+  for(const r of res.items){
+    const tr = document.createElement('tr');
+    const st = r.revoked ? '<span class="pill bad">Revoked</span>' :
+      (r.expires_at && new Date(r.expires_at) < new Date() ? '<span class="pill bad">Expired</span>' : '<span class="pill ok">Active</span>');
+    tr.innerHTML = `
+      <td class="muted" style="font-family:monospace">${r.key}</td>
+      <td>${r.product} / <span class="muted">${r.version}</span></td>
+      <td>${r.created_at||'-'}</td>
+      <td>${r.activated_at||'-'}</td>
+      <td>${r.expires_at||'-'}</td>
+      <td class="muted">${r.activated_hwid||'-'}</td>
+      <td>${st}</td>
+      <td>
+        <button onclick="copy('${r.key}')">Copy</button>
+        <button onclick="post('revoke',{key:'${r.key}'},true).then(refreshList)">Revoke</button>
+        <button onclick="post('extend',{key:'${r.key}',days:Number(val('extend'))},true).then(refreshList)">Extend</button>
+      </td>`;
+    tb.appendChild(tr);
+  }
+}
+async function activate(){
+  const res = await post('activate', {key: val('key'), hwid: val('hwid'), version: val('version')}, false);
+  out(res); refreshList();
+}
+async function validate(){ out(await post('validate', {key: val('key')}, false)); }
+async function revoke(){ out(await post('revoke', {key: val('key')}, true)); refreshList(); }
+async function extend(){ out(await post('extend', {key: val('key'), days: Number(val('extend'))}, true)); refreshList(); }
+function copy(t){navigator.clipboard.writeText(t)}
+refreshList();
+</script>
+</body>
+</html>
